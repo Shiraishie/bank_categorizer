@@ -17,8 +17,34 @@ assert GROQ_API_KEY is not None, "GROQ_API_KEY environment variable not set"
 
 # Processes our ~pdfs
 def process_pdf():
-    subprocess.run(["monopoly", ".", '--preserve-filename'])
-    return 'Finished Processing PDFs'
+    try:
+        subprocess.run(["monopoly", "./csv", '--preserve-filename'])
+        return 'Finished Processing PDFs'
+    except Exception as e:
+        return print("Error processing PDFs in csv folder")
+
+
+#Merges all csv in the csv folder
+def merge_csv():
+    final = pd.DataFrame()
+    for file in os.listdir('csv'):
+        if file.endswith('.csv'):
+            path = f'./csv/{file}'
+            try:
+                df = pd.read_csv(path, encoding='utf-8')
+                final = pd.concat([final,df], ignore_index=True)
+                print(df)
+            except Exception as e:
+                print(e)
+        else:
+            continue
+    return final
+
+def process_and_merge():
+    process_pdf()
+    df = merge_csv()
+    df.to_csv('final.csv')
+    return
 
 # DuckDuckGo Scraper
 def ddg_scrape(query, max_results=5):
@@ -83,9 +109,11 @@ def check_output_length(original_input, ai_output):
 
 # LLM Models
 # First Classifier
+#Smaller Model
 model = GroqModel(
     #'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY) #Smaller Model
-    'moonshotai/kimi-k2-instruct', provider=GroqProvider(api_key=GROQ_API_KEY)
+    'openai/gpt-oss-20b', provider=GroqProvider(api_key=GROQ_API_KEY),
+    #'moonshotai/kimi-k2-instruct', provider=GroqProvider(api_key=GROQ_API_KEY)
 )
 agent = Agent(
     model,
@@ -125,9 +153,8 @@ agent = Agent(
 
 # Auditor 
 reviewer_model = GroqModel(
-    #'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY)
-    
-    'moonshotai/kimi-k2-instruct', provider=GroqProvider(api_key=GROQ_API_KEY)
+    'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY)
+    #'moonshotai/kimi-k2-instruct', provider=GroqProvider(api_key=GROQ_API_KEY)
 )
 reviewer_agent = Agent(
     reviewer_model,
@@ -177,7 +204,7 @@ def correction_prompt(original_input, ai_output):
 
 # Research
 researcher_agent = GroqModel(
-    'openai/gpt-oss-20b', provider=GroqProvider(api_key=GROQ_API_KEY)
+    'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY)
 )
 
 researcher_agent = Agent(
@@ -207,7 +234,7 @@ async def run_agent(agent,li: str):
     return result.output
 
 async def classify_transactions(transactions): #df['description]
-    c = 10 # chunk size
+    c = 7 # chunk size
     all = []
     for i in range(0, len(transactions), c):
         trans_sliced = transactions[i:i+c]
@@ -260,4 +287,4 @@ async def final_classification_function(df):
     tags =  await classify_transactions(df['description'])
     df['Tag'] = tags
     final_df = await key_list(df)
-    return final_df
+    return final_df.to_csv('check.csv')

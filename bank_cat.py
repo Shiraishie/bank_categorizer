@@ -8,43 +8,55 @@ from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.providers.groq import GroqProvider
+from pathlib import Path
 
+from monopoly.banks import BankDetector, banks
+from monopoly.generic import GenericBank
+from monopoly.pdf import PdfDocument, PdfParser
+from monopoly.pipeline import Pipeline
+import pandas as pd
+import tempfile
+import streamlit as st
 
 #Load .env and check if API Key Loaded
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+#GROQ_API_KEY = st.secrets['GROQ_API_KEY']
 assert GROQ_API_KEY is not None, "GROQ_API_KEY environment variable not set"
 
-# Processes our ~pdfs
-def process_pdf():
+@st.cache_resource
+def process_and_merge_pdfs(input_files): # List of items
     try:
-        subprocess.run(["monopoly", "./csv", '--preserve-filename'])
-        return 'Finished Processing PDFs'
+        if not input_files:
+            return "No PDF files found"
+
+        results = pd.DataFrame()
+            
+        for file in input_files:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(file.read())
+                tmp_path = Path(tmp.name)
+            document = PdfDocument(tmp_path)
+            document.unlock_document()
+
+            # Auto-detect the bank (same as CLI does)
+            bank = BankDetector(document).detect_bank(banks) or GenericBank
+            parser = PdfParser(bank, document)
+            pipeline = Pipeline(parser)
+
+            statement = pipeline.extract()
+            transactions = pipeline.transform(statement)
+            # Load directly into a DataFrame — no file written
+            df = pd.DataFrame(
+                [[t.date, t.description, t.amount, t.balance or 0] for t in transactions],
+                columns=statement.columns,
+            )
+            results = pd.concat([results,df])
+        return results
+
     except Exception as e:
-        return print("Error processing PDFs in csv folder")
-
-
-#Merges all csv in the csv folder
-def merge_csv():
-    final = pd.DataFrame()
-    for file in os.listdir('csv'):
-        if file.endswith('.csv'):
-            path = f'./csv/{file}'
-            try:
-                df = pd.read_csv(path, encoding='utf-8')
-                final = pd.concat([final,df], ignore_index=True)
-                print(df)
-            except Exception as e:
-                print(e)
-        else:
-            continue
-    return final
-
-def process_and_merge():
-    process_pdf()
-    df = merge_csv()
-    df.to_csv('final.csv')
-    return
+        print(f"Error processing PDFs: {e}")
+        raise
 
 # DuckDuckGo Scraper
 def ddg_scrape(query, max_results=5):
@@ -112,7 +124,7 @@ def check_output_length(original_input, ai_output):
 #Smaller Model
 model = GroqModel(
     #'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY) #Smaller Model
-    'openai/gpt-oss-20b', provider=GroqProvider(api_key=GROQ_API_KEY),
+    'openai/gpt-oss-120b', provider=GroqProvider(api_key=GROQ_API_KEY),
     #'moonshotai/kimi-k2-instruct', provider=GroqProvider(api_key=GROQ_API_KEY)
 )
 agent = Agent(
@@ -234,7 +246,7 @@ async def run_agent(agent,li: str):
     return result.output
 
 async def classify_transactions(transactions): #df['description]
-    c = 7 # chunk size
+    c = 10 # chunk size
     all = []
     for i in range(0, len(transactions), c):
         trans_sliced = transactions[i:i+c]
@@ -287,4 +299,4 @@ async def final_classification_function(df):
     tags =  await classify_transactions(df['description'])
     df['Tag'] = tags
     final_df = await key_list(df)
-    return final_df.to_csv('check.csv')
+    return final_df

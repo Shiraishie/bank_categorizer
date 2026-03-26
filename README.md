@@ -24,7 +24,7 @@ streamlit run streamlit.py
 
 ### gif
 
-![](./media/giff.gif)
+![](./media/giff2.gif)
 
 ### Thanks
 

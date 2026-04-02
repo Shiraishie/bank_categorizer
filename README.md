@@ -1,6 +1,6 @@
 # bank_categorizer
 
-Project because i'm hella bored. Uses agentic ai to categorize bank transactions in SG, since we cant access merchant code of each transactions (shuld be private info for banks)
+Project because i'm hella bored. Uses llms to categorize bank transactions in SG, since we cant access merchant code of each transactions (shuld be private info for banks)
 categorizes food paynow transactions as food, and transfers out as paynow out and transfers in as paynow in.
 
 ### Flow
